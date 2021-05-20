@@ -19,9 +19,9 @@ class ModuleDatastore
   end
 
   def import_options(options, imported_by = nil, overwrite = false)
-    options.each do |name, opt|
-      if self[name].nil?
-        import_option(name, opt.default, true, imported_by, opt)
+    options.each do |opt|
+      if self[opt.name].nil?
+        import_option(opt.name, opt.default, true, imported_by, opt)
       end
     end
   end
@@ -35,12 +35,16 @@ class ModuleDatastore
     ModuleDatastore.new(store.merge(other), @mod)
   end
 
+  def to_h
+    @store
+  end
+
   private
 
   attr :store
 
   def find_alias_name(name)
-    @options.find { |option| option.alias == name }&.name || name
+    @options.values.find { |option| option.alias == name }&.name || name
   end
 end
 
@@ -158,22 +162,39 @@ class TargetEnumerator
   end
 
   def get_targets
-    Enumerator.new do |result|
-      # TODO: Would have to implement priorities of rport, etc.
-      if @mod.options['RHOSTS']
-        targets = @mod.datastore['RHOSTS']
-        targets.split(' ').each do |target|
-          target_datastore = @mod.datastore.merge(
-            'RHOST' => target,
-            'RPORT' => @mod.datastore['RPORT'] || @mod.options['RPORT'].default
-          )
-          result << target_datastore
+    if @mod.options['RHOSTS']
+      return parse(@mod.datastore['RHOSTS'], @mod)
+    end
+
+    # TODO? No targets?
+    Enumerator.new([])
+  end
+
+  private
+
+  def parse(input, mod)
+    Enumerator.new do |results|
+      values = input.split(', ').map { |line| line.split(' ') }.flatten
+      values.each do |value|
+        if (value =~ /^file:\/\/(.*)/) || (value =~ /^file:(.*)/)
+          file = $1
+          File.read(file).each_line(chomp: true) do |line|
+            parse(line, mod).each do |result|
+              results << result
+            end
+          end
+        # elsif (value =~ /^rand:(.*)/)
+        else
+          Rex::Socket::RangeWalker.new(value).each_host do |rhost|
+            overrides = {}
+            overrides['RHOSTS'] = rhost[:address]
+            # nmod.datastore['VHOST'] = rhost[:hostname] if nmod.options.include?('VHOST') && nmod.datastore['VHOST'].blank?
+            results << mod.datastore.merge(overrides)
+          end
         end
       end
     end
   end
-
-  private
 
   def parse_rtargets(rtargets)
     items = rtargets.split(' ')
@@ -320,48 +341,55 @@ class ModuleWorker
   attr :datastore
 end
 
-module_scheduler = ModuleScheduler.new
-tomcat_module = TomcatModule.new
-tomcat_module.datastore['RHOSTS'] = (0..5).map { |x| "10.10.10.#{x}" }.join(' ')
-# tomcat_module.datastore['RHOSTS'] = "http://www.google.com"
+def main
 
-# module_scheduler.batch do |batch|
-#   batch.jobs do
-#
-#   end
-# end
+  module_scheduler = ModuleScheduler.new
+  tomcat_module = TomcatModule.new
+  tomcat_module.datastore['RHOSTS'] = (0..5).map { |x| "10.10.10.#{x}" }.join(' ')
+  # tomcat_module.datastore['RHOSTS'] = "http://www.google.com"
 
-job_id = module_scheduler.perform_async(
-  [
-    tomcat_module
-  ]
-)
+  # module_scheduler.batch do |batch|
+  #   batch.jobs do
+  #
+  #   end
+  # end
 
-# TODO: Doesn't work if you have out of band workers
-module_scheduler.register_worker(ModuleWorker)
-module_scheduler.register_worker(ModuleWorker)
-module_scheduler.register_worker(ModuleWorker)
-module_scheduler.register_worker(ModuleWorker)
-module_scheduler.register_worker(ModuleWorker)
-module_scheduler.register_worker(ModuleWorker)
+  job_id = module_scheduler.perform_async(
+    [
+      tomcat_module
+    ]
+  )
 
-loop do
-  results = module_scheduler.get_results(job_id)
-  if results == :done
-    puts 'done!'
-    break
-  else
-    # sleep 1
+  # TODO: Doesn't work if you have out of band workers
+  module_scheduler.register_worker(ModuleWorker)
+  module_scheduler.register_worker(ModuleWorker)
+  module_scheduler.register_worker(ModuleWorker)
+  module_scheduler.register_worker(ModuleWorker)
+  module_scheduler.register_worker(ModuleWorker)
+  module_scheduler.register_worker(ModuleWorker)
+
+  loop do
+    results = module_scheduler.get_results(job_id)
+    if results == :done
+      puts 'done!'
+      break
+    else
+      # sleep 1
+    end
   end
+
+  module_scheduler.stop
+
+  def display_module(mod)
+    puts "module: #{mod.class}"
+    mod.options.each do |option|
+      puts "#{option.name}=#{mod.datastore[option.name]}"
+    end
+  end
+
+  display_module(tomcat_module)
 end
 
-module_scheduler.stop
-
-def display_module(mod)
-  puts "module: #{mod.class}"
-  mod.options.each do |option|
-    puts "#{option.name}=#{mod.datastore[option.name]}"
-  end
+if $PROGRAM_NAME == __FILE__
+  main
 end
-
-display_module(tomcat_module)
