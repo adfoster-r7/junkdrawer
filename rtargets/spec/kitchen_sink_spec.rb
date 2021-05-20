@@ -137,5 +137,47 @@ RSpec.describe 'the kitchen sink' do
         expect(mod.get_targets.to_a.map(&:to_h)).to eq(expected)
       end
     end
+
+    context 'when there is an http value' do
+      let(:datastore) do
+        store = ModuleDatastore.new(
+          {
+            'RHOSTS' => "http://www.example.com/foo"
+          },
+          mod
+        )
+        store.import_options(mod.options)
+        store
+      end
+
+      it 'calculates the required targets' do
+        expected = [
+          {"HttpPassword"=>"", "HttpUsername"=>"", "RHOSTS"=>"www.example.com", "RPORT"=>80, "SSL"=>false, "TARGETURI"=>"/foo", "URI"=>"/foo", "VHOST"=>"www.example.com"}
+        ]
+        expect(mod.get_targets.to_a.map(&:to_h)).to eq(expected)
+      end
+    end
+
+    context 'when there is a file with http values' do
+      let(:datastore) do
+        temp_file = create_tempfile("https://www.example.com/\n127.0.0.1")
+        store = ModuleDatastore.new(
+          {
+            'RHOSTS' => "file:#{temp_file}"
+          },
+          mod
+        )
+        store.import_options(mod.options)
+        store
+      end
+
+      it 'calculates the required targets' do
+        expected = [
+          {"HttpPassword"=>"", "HttpUsername"=>"", "RHOSTS"=>"www.example.com", "RPORT"=>443, "SSL"=>true, "TARGETURI"=>"/", "URI"=>"/", "VHOST"=>"www.example.com"},
+          { "RHOSTS" => "127.0.0.1", "RPORT" => 8080 },
+        ]
+        expect(mod.get_targets.to_a.map(&:to_h)).to eq(expected)
+      end
+    end
   end
 end

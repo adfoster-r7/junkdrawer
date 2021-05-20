@@ -2,6 +2,34 @@
 
 require 'rex/socket'
 
+# Providing active support patches
+class String
+  # A string is blank if it's empty or contains whitespaces only:
+  #
+  #   "".blank?                 # => true
+  #   "   ".blank?              # => true
+  #   " something here ".blank? # => false
+  #
+  def blank?
+    self !~ /\S/
+  end
+
+  def present?
+    !blank?
+  end
+end
+
+# Providing active support patches
+class NilClass
+  def blank?
+    true
+  end
+
+  def present?
+    !blank?
+  end
+end
+
 class ModuleDatastore
   def initialize(store = {}, mod)
     @store = store.clone
@@ -59,6 +87,20 @@ class Option
   end
 end
 
+class RString < Option
+  def initialize(options = {})
+    super(
+      {
+        name: name,
+        default: nil,
+        description: 'RHOSTS - examples: 10.10.10.10, http://x.x.x.x/foo/bar, cidr:/24:http://10.10.0.0:8080',
+      }.merge(options)
+    )
+  end
+
+  def validate; end
+end
+
 class RHost < Option
   def initialize(options = {})
     super(
@@ -110,6 +152,10 @@ class OptionContainer
     nil
   end
 
+  def include?(k)
+    !@options[k].nil?
+  end
+
   private
 
   attr :options
@@ -124,7 +170,7 @@ class MockModule
     register_options(
       [
         RHost.new,
-        RPort.new(default: 8080)
+        RPort.new(default: 8080),
       ]
     )
   end
@@ -183,12 +229,15 @@ class TargetEnumerator
               results << result
             end
           end
+        elsif value.start_with?('http:') || value.start_with?('https:')
+          overrides = parse_http_uri(value)
+          results << mod.datastore.merge(overrides)
         # elsif (value =~ /^rand:(.*)/)
         else
           Rex::Socket::RangeWalker.new(value).each_host do |rhost|
             overrides = {}
             overrides['RHOSTS'] = rhost[:address]
-            # nmod.datastore['VHOST'] = rhost[:hostname] if nmod.options.include?('VHOST') && nmod.datastore['VHOST'].blank?
+            overrides['VHOST'] = rhost[:hostname] if mod.options.include?('VHOST') && mod.datastore['VHOST'].blank?
             results << mod.datastore.merge(overrides)
           end
         end
@@ -196,41 +245,31 @@ class TargetEnumerator
     end
   end
 
-  def parse_rtargets(rtargets)
-    items = rtargets.split(' ')
-    items.each do |item|
-      if item.start_with?('http:') || item.start_with('https:')
-        URI
-      end
-
-    end
-  end
-
   def parse_http_uri(value)
     return unless value
 
-    uri = get_uri(value)
+    uri = URI(value)
     return unless uri
 
-    option_hash = {}
-    # Blank this out since we don't know if this new value will have a `VHOST` to ensure we remove the old value
-    option_hash['VHOST'] = nil
+    result = {}
+    # nil VHOST for now, this value will be calculated and overridden later
+    result['VHOST'] = nil
 
-    option_hash['RHOSTS'] = uri.hostname
-    option_hash['RPORT'] = uri.port
-    option_hash['SSL'] = %w[ssl https].include?(uri.scheme)
+    result['RHOSTS'] = uri.hostname
+    result['RPORT'] = uri.port
+    result['SSL'] = %w[ssl https].include?(uri.scheme)
 
     # Both `TARGETURI` and `URI` are used as datastore options to denote the path on a uri
-    option_hash['TARGETURI'] = uri.path.present? ? uri.path : '/'
-    option_hash['URI'] = option_hash['TARGETURI']
+    result['TARGETURI'] = uri.path.present? ? uri.path : '/'
+    result['URI'] = result['TARGETURI']
 
     if uri.scheme && %(http https).include?(uri.scheme)
-      option_hash['VHOST'] = uri.hostname unless Rex::Socket.is_ip_addr?(uri.hostname)
-      option_hash['HttpUsername'] = uri.user.to_s
-      option_hash['HttpPassword'] = uri.password.to_s
+      result['VHOST'] = uri.hostname unless Rex::Socket.is_ip_addr?(uri.hostname)
+      result['HttpUsername'] = uri.user.to_s
+      result['HttpPassword'] = uri.password.to_s
     end
 
-    option_hash
+    result
   end
 end
 
@@ -240,7 +279,8 @@ class TomcatModule < MockModule
 
     register_options(
       [
-        RPort.new(default: 8080)
+        RPort.new(default: 8080),
+        # RString.new(name: 'VHOST', description: 'The virtual host name to use in requests')
       ]
     )
   end
