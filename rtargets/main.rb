@@ -160,15 +160,13 @@ class TargetEnumerator
   def get_targets
     Enumerator.new do |result|
       # TODO: Would have to implement priorities of rport, etc.
-      if @mod.options['RTARGETS'] && @mod.datastore['RTARGETS']
-        targets = @mod.datastore['RTARGETS']
+      if @mod.options['RHOSTS']
+        targets = @mod.datastore['RHOSTS']
         targets.split(' ').each do |target|
           target_datastore = @mod.datastore.merge(
             'RHOST' => target,
             'RPORT' => @mod.datastore['RPORT'] || @mod.options['RPORT'].default
           )
-          # XXX: RTARGETS is a computeddatabase.yml value
-          target_datastore['RTARGETS'] = nil
           result << target_datastore
         end
       end
@@ -260,11 +258,7 @@ class ModuleScheduler
 
   def perform_async(mods)
     mods.each do |mod|
-      fiber = mod.get_targets
-      loop do
-        datastore = fiber.resume
-        break if datastore.nil?
-
+      mod.get_targets.each do |datastore|
         @datastore.push(
           {
             mod: mod,
@@ -328,8 +322,8 @@ end
 
 module_scheduler = ModuleScheduler.new
 tomcat_module = TomcatModule.new
-# tomcat_module.datastore['RTARGETS'] = (0..100).map { |x| "10.10.10.#{x}" }.join(' ')
-tomcat_module.datastore['RHOSTS'] = "http://www.google.com"
+tomcat_module.datastore['RHOSTS'] = (0..5).map { |x| "10.10.10.#{x}" }.join(' ')
+# tomcat_module.datastore['RHOSTS'] = "http://www.google.com"
 
 # module_scheduler.batch do |batch|
 #   batch.jobs do
@@ -337,33 +331,34 @@ tomcat_module.datastore['RHOSTS'] = "http://www.google.com"
 #   end
 # end
 
-# job_id = module_scheduler.perform_async(
-#   [
-#     tomcat_module
-#   ]
-# )
-#
-# # TODO: Doesn't work if you have out of band workers
-# module_scheduler.register_worker(ModuleWorker)
-# module_scheduler.register_worker(ModuleWorker)
-# module_scheduler.register_worker(ModuleWorker)
-# module_scheduler.register_worker(ModuleWorker)
-# module_scheduler.register_worker(ModuleWorker)
-# module_scheduler.register_worker(ModuleWorker)
+job_id = module_scheduler.perform_async(
+  [
+    tomcat_module
+  ]
+)
 
-# loop do
-#   results = module_scheduler.get_results(job_id)
-#   if results == :done
-#     puts 'done!'
-#     break
-#   else
-#     sleep 2
-#   end
-# end
+# TODO: Doesn't work if you have out of band workers
+module_scheduler.register_worker(ModuleWorker)
+module_scheduler.register_worker(ModuleWorker)
+module_scheduler.register_worker(ModuleWorker)
+module_scheduler.register_worker(ModuleWorker)
+module_scheduler.register_worker(ModuleWorker)
+module_scheduler.register_worker(ModuleWorker)
+
+loop do
+  results = module_scheduler.get_results(job_id)
+  if results == :done
+    puts 'done!'
+    break
+  else
+    # sleep 1
+  end
+end
 
 module_scheduler.stop
 
 def display_module(mod)
+  puts "module: #{mod.class}"
   mod.options.each do |option|
     puts "#{option.name}=#{mod.datastore[option.name]}"
   end
