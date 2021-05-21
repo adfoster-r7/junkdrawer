@@ -40,7 +40,8 @@ RSpec.describe 'the kitchen sink' do
         expected = [
           { "RHOSTS" => "127.0.0.1", "RPORT" => 8080 }
         ]
-        expect(mod.get_targets.map(&:to_h)).to eq(expected)
+        actual = mod.get_targets.map(&:to_h)
+        expect(actual).to eq(expected)
       end
     end
 
@@ -62,7 +63,8 @@ RSpec.describe 'the kitchen sink' do
           { "RHOSTS" => "127.0.0.2", "RPORT" => 8080 },
           { "RHOSTS" => "127.0.0.3", "RPORT" => 8080 },
         ]
-        expect(mod.get_targets.map(&:to_h)).to eq(expected)
+        actual = mod.get_targets.map(&:to_h)
+        expect(actual).to eq(expected)
       end
     end
 
@@ -85,7 +87,8 @@ RSpec.describe 'the kitchen sink' do
           { "RHOSTS" => "127.0.0.2", "RPORT" => 8080 },
           { "RHOSTS" => "127.0.0.3", "RPORT" => 8080 },
         ]
-        expect(mod.get_targets.map(&:to_h)).to eq(expected)
+        actual = mod.get_targets.map(&:to_h)
+        expect(actual).to eq(expected)
       end
     end
 
@@ -112,7 +115,8 @@ RSpec.describe 'the kitchen sink' do
           { "RHOSTS" => "127.0.0.2", "RPORT" => 8080 },
           { "RHOSTS" => "127.0.0.3", "RPORT" => 8080 },
         ]
-        expect(mod.get_targets.map(&:to_h)).to eq(expected)
+        actual = mod.get_targets.map(&:to_h)
+        expect(actual).to eq(expected)
       end
     end
 
@@ -134,7 +138,8 @@ RSpec.describe 'the kitchen sink' do
           { "RHOSTS" => "127.0.0.0", "RPORT" => 8080 },
           { "RHOSTS" => "127.0.0.1", "RPORT" => 8080 },
         ]
-        expect(mod.get_targets.map(&:to_h)).to eq(expected)
+        actual = mod.get_targets.map(&:to_h)
+        expect(actual).to eq(expected)
       end
     end
 
@@ -154,7 +159,8 @@ RSpec.describe 'the kitchen sink' do
         expected = [
           {"HttpPassword"=>"", "HttpUsername"=>"", "RHOSTS"=>"www.example.com", "RPORT"=>80, "SSL"=>false, "TARGETURI"=>"/foo", "URI"=>"/foo", "VHOST"=>"www.example.com"}
         ]
-        expect(mod.get_targets.map(&:to_h)).to eq(expected)
+        actual = mod.get_targets.map(&:to_h)
+        expect(actual).to eq(expected)
       end
     end
 
@@ -177,31 +183,8 @@ RSpec.describe 'the kitchen sink' do
           {"RHOSTS"=>"127.0.0.2", "RPORT"=>3000, "VHOST"=>nil, "SSL"=>false, "TARGETURI"=>"/foo/bar", "URI"=>"/foo/bar", "HttpUsername"=>"", "HttpPassword"=>""},
           {"RHOSTS"=>"127.0.0.3", "RPORT"=>3000, "VHOST"=>nil, "SSL"=>false, "TARGETURI"=>"/foo/bar", "URI"=>"/foo/bar", "HttpUsername"=>"", "HttpPassword"=>""}
         ]
-        expect(mod.get_targets.map(&:to_h)).to eq(expected)
-      end
-    end
-
-    context 'when there is a combination of hosts and cidr prefixes with http values' do
-      let(:datastore) do
-        store = ModuleDatastore.new(
-          {
-            'RHOSTS' => "10.10.10.10, cidr:/31:http://10.10.10.10/tomcat/manager, https://192.168.1.1:8080/manager/html"
-          },
-          mod
-        )
-        store.import_options(mod.options)
-        store
-      end
-
-      it 'calculates the required targets' do
-        expected = [
-          {"RHOSTS"=>"10.10.10.10", "RPORT"=>8080},
-          # Note: Port 80 beats the default RPORT value 8080 of the module
-          {"RHOSTS"=>"10.10.10.10", "RPORT"=>80, "VHOST"=>nil, "SSL"=>false, "TARGETURI"=>"/tomcat/manager", "URI"=>"/tomcat/manager", "HttpUsername"=>"", "HttpPassword"=>""},
-          {"RHOSTS"=>"10.10.10.11", "RPORT"=>80, "VHOST"=>nil, "SSL"=>false, "TARGETURI"=>"/tomcat/manager", "URI"=>"/tomcat/manager", "HttpUsername"=>"", "HttpPassword"=>""},
-          {"RHOSTS"=>"192.168.1.1", "RPORT"=>8080, "VHOST"=>nil, "SSL"=>true, "TARGETURI"=>"/manager/html", "URI"=>"/manager/html", "HttpUsername"=>"", "HttpPassword"=>""}
-        ]
-        expect(mod.get_targets.map(&:to_h)).to eq(expected)
+        actual = mod.get_targets.map(&:to_h)
+        expect(actual).to eq(expected)
       end
     end
 
@@ -246,7 +229,40 @@ RSpec.describe 'the kitchen sink' do
           {"HttpPassword"=>"", "HttpUsername"=>"", "RHOSTS"=>"www.example.com", "RPORT"=>443, "SSL"=>true, "TARGETURI"=>"/", "URI"=>"/", "VHOST"=>"www.example.com"},
           { "RHOSTS" => "127.0.0.1", "RPORT" => 8080 },
         ]
-        expect(mod.get_targets.map(&:to_h)).to eq(expected)
+        actual = mod.get_targets.map(&:to_h)
+        expect(actual).to eq(expected)
+      end
+    end
+
+    context 'when there is a combination of all supported syntaxes' do
+      let(:datastore) do
+        temp_file_a = create_tempfile("\n192.0.2.0\n\n\n127.0.0.5\n\n")
+        temp_file_b = create_tempfile("https://www.example.com/\n127.0.0.1\ncidr:/31:http://127.0.0.1/tomcat/manager\nfile:#{temp_file_a}")
+        store = ModuleDatastore.new(
+          {
+            'RHOSTS' => "127.0.0.1, cidr:/31:http://192.0.2.0/tomcat/manager, https://192.0.2.0:8080/manager/html file:#{temp_file_b}"
+          },
+          mod
+        )
+        store.import_options(mod.options)
+        store
+      end
+
+      it 'calculates the required targets' do
+        expected = [
+          {"RHOSTS"=>"127.0.0.1", "RPORT"=>8080},
+          {"RHOSTS"=>"192.0.2.0", "RPORT"=>80, "VHOST"=>nil, "SSL"=>false, "TARGETURI"=>"/tomcat/manager", "URI"=>"/tomcat/manager", "HttpUsername"=>"", "HttpPassword"=>""},
+          {"RHOSTS"=>"192.0.2.1", "RPORT"=>80, "VHOST"=>nil, "SSL"=>false, "TARGETURI"=>"/tomcat/manager", "URI"=>"/tomcat/manager", "HttpUsername"=>"", "HttpPassword"=>""},
+          {"RHOSTS"=>"192.0.2.0", "RPORT"=>8080, "VHOST"=>nil, "SSL"=>true, "TARGETURI"=>"/manager/html", "URI"=>"/manager/html", "HttpUsername"=>"", "HttpPassword"=>""},
+          {"RHOSTS"=>"www.example.com", "RPORT"=>443, "VHOST"=>"www.example.com", "SSL"=>true, "TARGETURI"=>"/", "URI"=>"/", "HttpUsername"=>"", "HttpPassword"=>""},
+          {"RHOSTS"=>"127.0.0.1", "RPORT"=>8080},
+          {"RHOSTS"=>"127.0.0.0", "RPORT"=>80, "VHOST"=>nil, "SSL"=>false, "TARGETURI"=>"/tomcat/manager", "URI"=>"/tomcat/manager", "HttpUsername"=>"", "HttpPassword"=>""},
+          {"RHOSTS"=>"127.0.0.1", "RPORT"=>80, "VHOST"=>nil, "SSL"=>false, "TARGETURI"=>"/tomcat/manager", "URI"=>"/tomcat/manager", "HttpUsername"=>"", "HttpPassword"=>""},
+          {"RHOSTS"=>"192.0.2.0", "RPORT"=>8080},
+          {"RHOSTS"=>"127.0.0.5", "RPORT"=>8080}
+        ]
+        actual = mod.get_targets.map(&:to_h)
+        expect(actual).to eq(expected)
       end
     end
   end

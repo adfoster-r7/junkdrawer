@@ -240,7 +240,6 @@ class TargetEnumerator
 
           # Parse the values, then apply range walker over the result
           parse(value, mod).each do |result|
-            # TODO: Validate non-IP RHOSTS
             host_with_cidr = result['RHOSTS'] + range
             Rex::Socket::RangeWalker.new(host_with_cidr).each_ip do |rhost|
               results << result.merge('RHOSTS' => rhost)
