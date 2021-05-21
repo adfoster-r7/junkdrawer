@@ -59,15 +59,16 @@ class ModuleDatastore
     @options[key] = option
   end
 
-  def merge(other)
-    ModuleDatastore.new(store.merge(other), @mod)
+  def merge(other = {})
+    other_store = other.is_a?(self.class) ? other.store : other
+    self.class.new(store.merge(other_store), @mod)
   end
 
   def to_h
     @store
   end
 
-  private
+  protected
 
   attr :store
 
@@ -233,6 +234,18 @@ class TargetEnumerator
           overrides = parse_http_uri(value)
           results << mod.datastore.merge(overrides)
         # elsif (value =~ /^rand:(.*)/)
+        elsif value =~ /^cidr:(.*)/
+          # TODO: Verify support `/24%scope` and not just `/24`, as well as ipv6
+          range, value = $1.split(':', 2)
+
+          # Parse the values, then apply range walker over the result
+          parse(value, mod).each do |result|
+            # TODO: Validate non-IP RHOSTS
+            host_with_cidr = result['RHOSTS'] + range
+            Rex::Socket::RangeWalker.new(host_with_cidr).each_ip do |rhost|
+              results << result.merge('RHOSTS' => rhost)
+            end
+          end
         else
           Rex::Socket::RangeWalker.new(value).each_host do |rhost|
             overrides = {}
